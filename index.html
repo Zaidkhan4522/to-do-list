@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elegant To-Do List</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Elegant To-Do List</h1>
+            <p class="subtitle">Organize your tasks with style and efficiency</p>
+        </div>
+
+        <div class="todo-input-container">
+            <input type="text" class="todo-input" id="todo-input" placeholder="Add a new task..." maxlength="200">
+            <button class="add-btn" id="add-btn">
+                <i class="fas fa-plus-circle"></i> Add Task
+            </button>
+        </div>
+
+        <div class="priority-selector" id="priority-selector">
+            <div class="priority-option low active" data-priority="low">Low Priority</div>
+            <div class="priority-option medium" data-priority="medium">Medium Priority</div>
+            <div class="priority-option high" data-priority="high">High Priority</div>
+        </div>
+
+        <div class="category-tags" id="category-tags">
+            <div class="category-tag active" data-category="all">All Tasks</div>
+            <div class="category-tag" data-category="work">Work</div>
+            <div class="category-tag" data-category="personal">Personal</div>
+            <div class="category-tag" data-category="shopping">Shopping</div>
+            <div class="category-tag" data-category="health">Health</div>
+        </div>
+
+        <div class="search-container">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" class="search-input" id="search-input" placeholder="Search tasks...">
+        </div>
+
+        <div class="todo-controls">
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="active">Active</button>
+                <button class="filter-btn" data-filter="completed">Completed</button>
+            </div>
+            <div class="stats" id="stats">
+                0 tasks, 0 completed
+            </div>
+            <button class="clear-btn" id="clear-completed">
+                <i class="fas fa-trash-alt"></i> Clear Completed
+            </button>
+        </div>
+
+        <ul class="todo-list" id="todo-list">
+            <!-- Todo items will be inserted here -->
+            <div class="empty-state" id="empty-state">
+                <div class="empty-icon">
+                    <i class="fas fa-clipboard-list"></i>
+                </div>
+                <h3 class="empty-title">No tasks yet</h3>
+                <p class="empty-description">Add a task above to get started!</p>
+            </div>
+        </ul>
+
+        <div class="todo-footer">
+            <div class="footer-stats" id="footer-stats">
+                <span id="total-tasks">0</span> total tasks
+            </div>
+            <button class="theme-toggle" id="theme-toggle">
+                <i class="fas fa-moon"></i> Dark Mode
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const todoInput = document.getElementById('todo-input');
+        const addBtn = document.getElementById('add-btn');
+        const todoList = document.getElementById('todo-list');
+        const emptyState = document.getElementById('empty-state');
+        const filters = document.querySelectorAll('.filter-btn');
+        const clearCompletedBtn = document.getElementById('clear-completed');
+        const themeToggle = document.getElementById('theme-toggle');
+        const statsElement = document.getElementById('stats');
+        const footerStats = document.getElementById('footer-stats');
+        const totalTasksElement = document.getElementById('total-tasks');
+        const priorityOptions = document.querySelectorAll('.priority-option');
+        const categoryTags = document.querySelectorAll('.category-tag');
+        const searchInput = document.getElementById('search-input');
+
+        // State variables
+        let todos = JSON.parse(localStorage.getItem('todos')) || [];
+        let currentFilter = 'all';
+        let currentPriority = 'low';
+        let currentCategory = 'all';
+        let searchQuery = '';
+        let isDarkTheme = localStorage.getItem('darkTheme') === 'true';
+
+        // Initialize the app
+        function init() {
+            loadTodos();
+            applyTheme();
+            updateStats();
+            renderTodos();
+
+            // Set up event listeners
+            addBtn.addEventListener('click', addTodo);
+            todoInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addTodo();
+            });
+
+            clearCompletedBtn.addEventListener('click', clearCompleted);
+            themeToggle.addEventListener('click', toggleTheme);
+
+            // Filter event listeners
+            filters.forEach(filter => {
+                filter.addEventListener('click', () => {
+                    // Update active filter
+                    filters.forEach(f => f.classList.remove('active'));
+                    filter.classList.add('active');
+
+                    // Set current filter and re-render
+                    currentFilter = filter.getAttribute('data-filter');
+                    renderTodos();
+                });
+            });
+
+            // Priority selector
+            priorityOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    // Update active priority
+                    priorityOptions.forEach(opt => opt.classList.remove('active'));
+                    option.classList.add('active');
+
+                    // Set current priority
+                    currentPriority = option.getAttribute('data-priority');
+                });
+            });
+
+            // Category tags
+            categoryTags.forEach(tag => {
+                tag.addEventListener('click', () => {
+                    // Update active category
+                    categoryTags.forEach(t => t.classList.remove('active'));
+                    tag.classList.add('active');
+
+                    // Set current category
+                    currentCategory = tag.getAttribute('data-category');
+                    renderTodos();
+                });
+            });
+
+            // Search input
+            searchInput.addEventListener('input', () => {
+                searchQuery = searchInput.value.toLowerCase();
+                renderTodos();
+            });
+        }
+
+        // Load todos from localStorage
+        function loadTodos() {
+            const savedTodos = localStorage.getItem('todos');
+            if (savedTodos) {
+                todos = JSON.parse(savedTodos);
+            }
+        }
+
+        // Save todos to localStorage
+        function saveTodos() {
+            localStorage.setItem('todos', JSON.stringify(todos));
+        }
+
+        // Add a new todo
+        function addTodo() {
+            const text = todoInput.value.trim();
+            if (!text) {
+                showNotification('Please enter a task', 'error');
+                return;
+            }
+
+            const newTodo = {
+                id: Date.now(),
+                text: text,
+                completed: false,
+                priority: currentPriority,
+                category: getCategoryFromText(text),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            todos.unshift(newTodo); // Add to beginning of array
+            saveTodos();
+            renderTodos();
+            updateStats();
+
+            // Clear input and show notification
+            todoInput.value = '';
+            showNotification('Task added successfully!', 'success');
+
+            // Reset priority to low
+            priorityOptions.forEach(opt => opt.classList.remove('active'));
+            document.querySelector('.priority-option.low').classList.add('active');
+            currentPriority = 'low';
+
+            // Focus back on input
+            todoInput.focus();
+        }
+
+        // Extract category from text (simple heuristic)
+        function getCategoryFromText(text) {
+            const lowerText = text.toLowerCase();
+
+            if (lowerText.includes('work') || lowerText.includes('meeting') || lowerText.includes('project')) {
+                return 'work';
+            } else if (lowerText.includes('buy') || lowerText.includes('shop') || lowerText.includes('grocery')) {
+                return 'shopping';
+            } else if (lowerText.includes('exercise') || lowerText.includes('gym') || lowerText.includes('doctor')) {
+                return 'health';
+            } else if (lowerText.includes('personal') || lowerText.includes('family') || lowerText.includes('home')) {
+                return 'personal';
+            }
+
+            return 'personal'; // Default category
+        }
+
+        // Toggle todo completion status
+        function toggleTodo(id) {
+            const todoIndex = todos.findIndex(todo => todo.id === id);
+            if (todoIndex !== -1) {
+                todos[todoIndex].completed = !todos[todoIndex].completed;
+                todos[todoIndex].updatedAt = new Date().toISOString();
+                saveTodos();
+                renderTodos();
+                updateStats();
+
+                const status = todos[todoIndex].completed ? 'completed' : 'marked as active';
+                showNotification(`Task ${status}!`, 'info');
+            }
+        }
+
+        // Delete a todo
+        function deleteTodo(id) {
+            const todoElement = document.querySelector(`[data-id="${id}"]`);
+            if (todoElement) {
+                todoElement.classList.add('removing');
+
+                // Wait for animation to complete before removing
+                setTimeout(() => {
+                    todos = todos.filter(todo => todo.id !== id);
+                    saveTodos();
+                    renderTodos();
+                    updateStats();
+                    showNotification('Task deleted!', 'info');
+                }, 300);
+            }
+        }
+
+        // Edit a todo
+        function editTodo(id, newText) {
+            const todoIndex = todos.findIndex(todo => todo.id === id);
+            if (todoIndex !== -1 && newText.trim()) {
+                todos[todoIndex].text = newText.trim();
+                todos[todoIndex].updatedAt = new Date().toISOString();
+                saveTodos();
+                renderTodos();
+                updateStats();
+                showNotification('Task updated!', 'success');
+            }
+        }
+
+        // Clear all completed todos
+        function clearCompleted() {
+            const completedCount = todos.filter(todo => todo.completed).length;
+
+            if (completedCount === 0) {
+                showNotification('No completed tasks to clear!', 'info');
+                return;
+            }
+
+            if (confirm(`Are you sure you want to clear ${completedCount} completed task(s)?`)) {
+                todos = todos.filter(todo => !todo.completed);
+                saveTodos();
+                renderTodos();
+                updateStats();
+                showNotification('Completed tasks cleared!', 'success');
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const total = todos.length;
+            const completed = todos.filter(todo => todo.completed).length;
+            const active = total - completed;
+
+            statsElement.textContent = `${total} tasks, ${completed} completed`;
+            footerStats.innerHTML = `<span id="total-tasks">${total}</span> total tasks, ${active} active`;
+
+            // Show/hide empty state
+            if (total === 0) {
+                emptyState.style.display = 'block';
+            } else {
+                emptyState.style.display = 'none';
+            }
+        }
+
+        // Render todos based on filter, category, and search
+        function renderTodos() {
+            // Clear the list
+            todoList.innerHTML = '';
+
+            // Filter todos based on current settings
+            let filteredTodos = todos;
+
+            // Apply filter (all, active, completed)
+            if (currentFilter === 'active') {
+                filteredTodos = filteredTodos.filter(todo => !todo.completed);
+            } else if (currentFilter === 'completed') {
+                filteredTodos = filteredTodos.filter(todo => todo.completed);
+            }
+
+            // Apply category filter
+            if (currentCategory !== 'all') {
+                filteredTodos = filteredTodos.filter(todo => todo.category === currentCategory);
+            }
+
+            // Apply search filter
+            if (searchQuery) {
+                filteredTodos = filteredTodos.filter(todo =>
+                    todo.text.toLowerCase().includes(searchQuery)
+                );
+            }
+
+            // If no todos after filtering, show empty state
+            if (filteredTodos.length === 0) {
+                const emptyFilterState = document.createElement('div');
+                emptyFilterState.className = 'empty-state';
+                emptyFilterState.innerHTML = `
+                    <div class="empty-icon">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <h3 class="empty-title">No tasks found</h3>
+                    <p class="empty-description">Try changing your filters or search query</p>
+                `;
+                todoList.appendChild(emptyFilterState);
+                return;
+            }
+
+            // Render each todo
+            filteredTodos.forEach(todo => {
+                const todoElement = document.createElement('li');
+                todoElement.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+                todoElement.setAttribute('data-id', todo.id);
+
+                // Format date
+                const createdDate = new Date(todo.createdAt);
+                const formattedDate = createdDate.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                });
+
+                // Priority class
+                const priorityClass = `priority-${todo.priority}`;
+
+                todoElement.innerHTML = `
+                    <input type="checkbox" class="todo-checkbox" ${todo.completed ? 'checked' : ''}>
+                    <div class="todo-text">${todo.text}</div>
+                    <div class="todo-priority ${priorityClass}">
+                        ${todo.priority.charAt(0).toUpperCase() + todo.priority.slice(1)}
+                    </div>
+                    <div class="todo-date">${formattedDate}</div>
+                    <div class="todo-actions">
+                        <button class="todo-action-btn edit" title="Edit task">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="todo-action-btn delete" title="Delete task">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `;
+
+                // Add event listeners
+                const checkbox = todoElement.querySelector('.todo-checkbox');
+                const editBtn = todoElement.querySelector('.edit');
+                const deleteBtn = todoElement.querySelector('.delete');
+                const todoText = todoElement.querySelector('.todo-text');
+
+                checkbox.addEventListener('change', () => toggleTodo(todo.id));
+
+                deleteBtn.addEventListener('click', () => deleteTodo(todo.id));
+
+                // Edit functionality
+                let isEditing = false;
+                editBtn.addEventListener('click', () => {
+                    if (!isEditing) {
+                        // Enter edit mode
+                        isEditing = true;
+                        const currentText = todoText.textContent;
+                        todoText.innerHTML = `<input type="text" class="todo-text editing" value="${currentText}">`;
+
+                        const editInput = todoElement.querySelector('.todo-text.editing');
+                        editInput.focus();
+                        editInput.select();
+
+                        // Handle edit completion
+                        const finishEdit = () => {
+                            const newText = editInput.value.trim();
+                            if (newText && newText !== currentText) {
+                                editTodo(todo.id, newText);
+                            } else {
+                                // If empty or same, revert
+                                todoText.textContent = currentText;
+                            }
+                            isEditing = false;
+                        };
+
+                        editInput.addEventListener('blur', finishEdit);
+                        editInput.addEventListener('keypress', (e) => {
+                            if (e.key === 'Enter') finishEdit();
+                        });
+                    }
+                });
+
+                // Add to list
+                todoList.appendChild(todoElement);
+            });
+        }
+
+        // Toggle theme
+        function toggleTheme() {
+            isDarkTheme = !isDarkTheme;
+            applyTheme();
+            localStorage.setItem('darkTheme', isDarkTheme);
+
+            // Update button text
+            const icon = themeToggle.querySelector('i');
+            const text = themeToggle.querySelector('span') || document.createElement('span');
+
+            if (isDarkTheme) {
+                icon.className = 'fas fa-sun';
+                text.textContent = 'Light Mode';
+            } else {
+                icon.className = 'fas fa-moon';
+                text.textContent = 'Dark Mode';
+            }
+
+            if (!themeToggle.contains(text)) {
+                themeToggle.appendChild(text);
+            }
+
+            showNotification(`Switched to ${isDarkTheme ? 'dark' : 'light'} mode`, 'info');
+        }
+
+        // Apply theme
+        function applyTheme() {
+            if (isDarkTheme) {
+                document.body.classList.add('dark-theme');
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i> Light Mode';
+            } else {
+                document.body.classList.remove('dark-theme');
+                themeToggle.innerHTML = '<i class="fas fa-moon"></i> Dark Mode';
+            }
+        }
+
+        // Show notification (simple version)
+        function showNotification(message, type) {
+            // Remove any existing notification
+            const existingNotification = document.querySelector('.notification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+
+            // Create notification
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+
+            // Style the notification
+            notification.style.position = 'fixed';
+            notification.style.bottom = '20px';
+            notification.style.right = '20px';
+            notification.style.padding = '15px 25px';
+            notification.style.borderRadius = '12px';
+            notification.style.color = 'white';
+            notification.style.fontWeight = '600';
+            notification.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.2)';
+            notification.style.zIndex = '1000';
+            notification.style.transition = 'all 0.3s ease';
+
+            // Set color based on type
+            if (type === 'success') {
+                notification.style.background = 'linear-gradient(to right, #4CAF50, #2E7D32)';
+            } else if (type === 'error') {
+                notification.style.background = 'linear-gradient(to right, #FF6B6B, #D32F2F)';
+            } else if (type === 'info') {
+                notification.style.background = 'linear-gradient(to right, #2196F3, #0D47A1)';
+            } else {
+                notification.style.background = 'linear-gradient(to right, #8BC6EC, #9599E2)';
+            }
+
+            // Add to DOM
+            document.body.appendChild(notification);
+
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateY(20px)';
+
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+
+</html>
